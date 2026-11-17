@@ -1,6 +1,21 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DEFAULT_PALETTE, DEFAULT_THEME, MONO_FONT, bannerSvg, chipSvg, describeTheme, parseTheme, pillHoverFill, resolveTheme } from './style'
+import {
+  DEFAULT_PALETTE,
+  DEFAULT_THEME,
+  MONO_FONT,
+  PILL_KEYS,
+  PRESET_NAMES,
+  THEME_PRESETS,
+  bannerSvg,
+  chipSvg,
+  describePresets,
+  describeTheme,
+  parseTheme,
+  pillHoverFill,
+  resolveTheme,
+} from './style'
+import type { Palette, PaletteKey } from './style'
 
 describe('theme file', () => {
   test('valid colours and a font overlay the defaults key by key', async () => {
@@ -42,7 +57,7 @@ describe('theme file', () => {
 
     expect(parsed.theme).toEqual({ colors: { paper: '#101820' } })
     expect(parsed.problems).toEqual([
-      '"colours" is not read: only "colors" and "font" are',
+      '"colours" is not read: only "preset", "colors" and "font" are',
       '"paperr" in "colors" is not a palette key',
       '"ink" in "colors" is 12, not a string',
       '"card" in "colors" is "white", not a "#rrggbb" colour',
@@ -128,4 +143,87 @@ describe('themed drawing', () => {
     expect(pillHoverFill('#000000', '#ffffff')).toBe('#333333')
     expect(pillHoverFill('#006fd7')).toBe(pillHoverFill('#006fd7', DEFAULT_PALETTE.ink))
   })
+})
+
+describe('bundled themes', () => {
+  test('a preset sets the palette and colours still override single keys of it', async () => {
+    const parsed = parseTheme(JSON.stringify({ preset: 'dark', colors: { accent: '#123456' } }))
+
+    expect(parsed).toEqual({ theme: { preset: 'dark', colors: { accent: '#123456' } }, problems: [] })
+    expect(resolveTheme(parsed.theme).palette).toEqual({ ...DEFAULT_PALETTE, ...THEME_PRESETS.dark, accent: '#123456' })
+  })
+
+  test('the default preset is the same as no preset', async () => {
+    const parsed = parseTheme('{ "preset": "default" }')
+
+    expect(parsed).toEqual({ theme: { colors: {} }, problems: [] })
+    expect(resolveTheme(parsed.theme)).toEqual(DEFAULT_THEME)
+  })
+
+  test('an unknown preset is a problem and keeps the default look', async () => {
+    for (const preset of ['nope', 7, 'toString']) {
+      const parsed = parseTheme(JSON.stringify({ preset }))
+
+      expect(parsed.theme).toEqual({ colors: {} })
+      expect(parsed.problems).toEqual([
+        `"preset" is ${JSON.stringify(preset)}, not one of "default", "dark", "solarized-dark", "high-contrast"`,
+      ])
+    }
+  })
+
+  test('the report names the preset in effect, and the list marks it', async () => {
+    const path = '/home/u/.claude/pulumi-plan/theme.json'
+
+    expect(describeTheme({ path, isFound: true, ...parseTheme('{ "preset": "high-contrast" }') })).toBe(
+      `Theme file ${path}: the "high-contrast" theme with 0 colour overrides and no font override in effect.`,
+    )
+    expect(describePresets('dark')).toContain('- dark (in effect)')
+    expect(describePresets(undefined)).toContain('- default (in effect)')
+  })
+
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map(at => {
+      const c = parseInt(hex.slice(at, at + 2), 16) / 255
+
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+
+    return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0)
+  }
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+
+    return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05)
+  }
+  const pairs = (P: Palette): [string, PaletteKey, PaletteKey | string, number][] => [
+    ...(['ink', 'muted', 'faint'] as const).flatMap(fg =>
+      (['card', 'panel', 'accentPaper'] as const).map(bg => [`${fg} on ${bg}`, fg, bg, 4.5] as [string, PaletteKey, PaletteKey, number]),
+    ),
+    ...(['warning', 'create', 'update', 'replace', 'delete', 'drift', 'pendingDrift', 'info', 'accentSoft', 'riskLow', 'riskMedium'] as const).map(
+      bg => [`ink on ${bg}`, 'ink', bg, 4.5] as [string, PaletteKey, PaletteKey, number],
+    ),
+    ['warnInk on warning', 'warnInk', 'warning', 4.5],
+    ['warnInk on card', 'warnInk', 'card', 4.5],
+    ['dangerInk on accentPaper', 'dangerInk', 'accentPaper', 4.5],
+    ['dangerInk on removedBg', 'dangerInk', 'removedBg', 4.5],
+    ['removedInk on removedBg', 'removedInk', 'removedBg', 4.5],
+    ['addedInk on addedBg', 'addedInk', 'addedBg', 4.5],
+    ['logInk on logBg', 'logInk', 'logBg', 4.5],
+    ...(['accent', 'ok', 'danger', 'riskHigh', ...PILL_KEYS] as const).flatMap(bg => [
+      [`onAccent on ${bg}`, 'onAccent', bg, 3] as [string, PaletteKey, PaletteKey, number],
+      [`onAccent on ${bg} hovered`, 'onAccent', pillHoverFill(P[bg], P.ink), 3] as [string, PaletteKey, string, number],
+    ]),
+  ]
+
+  for (const name of PRESET_NAMES.filter(name => name !== 'default')) {
+    test(`the ${name} preset keeps the documented contrast`, async () => {
+      const P = resolveTheme({ preset: name, colors: {} }).palette
+      const weak = pairs(P)
+        .map(([pair, fg, bg, min]) => ({ pair, ratio: contrast(P[fg], bg.startsWith('#') ? bg : P[bg as PaletteKey]), min }))
+        .filter(({ ratio, min }) => ratio < min)
+        .map(({ pair, ratio }) => `${pair}: ${ratio.toFixed(2)}`)
+
+      expect(weak).toEqual([])
+    })
+  }
 })

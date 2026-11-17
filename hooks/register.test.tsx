@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 
 import { launchArgv, previewArgv } from './apply'
 import { URNS, applyPreview, baselinePreview, branchPreview, preMergePreview, urn } from './fixtures'
-import { DEFAULT_PALETTE as PALETTE, PILL_KEYS, chipSvg, pillHoverFill } from './style'
+import { DEFAULT_PALETTE as PALETTE, PILL_KEYS, THEME_PRESETS, chipSvg, pillHoverFill } from './style'
 
 const TOOL = 'mcp__pulumi-plan__show'
 const HEAD = 'c0ffee0000000000000000000000000000000001'
@@ -1523,4 +1523,85 @@ test('with HOME unset the theme is the default and /pulumi-plan theme says why',
 
   expect(toasts).toEqual([])
   expect((await runCommand($, 'theme')).text).toMatch(/^HOME is not set/)
+})
+
+test('a risk label shows as a chip with its reason, and a preview without one says so', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const base = await call($)({ tool: TOOL, previewJson: '/plans/base.json', worktree: '/wt', role: 'baseline' })
+  const branch = await call($)({
+    tool: TOOL,
+    previewJson: '/plans/branch.json',
+    worktree: '/wt',
+    role: 'branch',
+    label: 'T-1',
+    risk: 'high',
+    riskReason: 'Replacing the web service drops\nevery open session.',
+  })
+
+  expect(base.result).toMatch(/^risk: not set/m)
+  expect(branch.result).toMatch(/^risk: high \(definite customer impact\) · Replacing the web service drops every open session\.$/m)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await findChip(ui, 'HIGH RISK')).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Replacing the web service drops every open session.' })).toBeDefined()
+    await expectPaletteOnly(ui)
+  }
+})
+
+test('each risk level draws its own chip colours', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const levels = [
+    ['low', 'LOW RISK', PALETTE.riskLow, PALETTE.ink],
+    ['medium', 'MEDIUM RISK', PALETTE.riskMedium, PALETTE.ink],
+    ['high', 'HIGH RISK', PALETTE.riskHigh, PALETTE.onAccent],
+  ] as const
+  for (const [risk] of levels) {
+    await call($)({ tool: TOOL, previewJson: '/plans/branch.json', worktree: '/wt', role: 'branch', label: `T-${risk}`, risk })
+  }
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  for (const [, label, fill, ink] of levels) {
+    const svg = (await ui.findAll({ type: 'Svg' })).find(node => String(node.props.alt) === label)
+    expect(String(svg?.props.source)).toBe(chipSvg(label, fill, ink).source)
+  }
+})
+
+test('an unknown risk level or an overlong reason is refused', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  const odd = await call($)({ tool: TOOL, previewJson: '/plans/base.json', worktree: '/wt', role: 'baseline', risk: 'severe' })
+  const long = await call($)({
+    tool: TOOL,
+    previewJson: '/plans/base.json',
+    worktree: '/wt',
+    role: 'baseline',
+    risk: 'low',
+    riskReason: 'x'.repeat(301),
+  })
+
+  expect(odd.text ?? odd.deny).toMatch(/risk must be "low", "medium" or "high"/)
+  expect(long.text ?? long.deny).toMatch(/riskReason must be at most 300 characters/)
+})
+
+test('a preset in the theme file draws the pane in that theme, and /pulumi-plan theme list marks it', async ($, on) => {
+  recordUi(on, { isPaneOpen: true })
+  const { rec } = applyEngine(on)
+  rec.files[THEME_PATH] = JSON.stringify({ preset: 'solarized-dark', colors: { pillCard: '#1f6feb' } })
+  await start($)
+  await registerApply($, 'staging', {}, rec.files)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' as (typeof SURFACES)[number] })
+
+  const drawn = await drawnColors(ui)
+  const solarized = THEME_PRESETS['solarized-dark']
+  for (const color of [solarized.paper, solarized.card, solarized.ink, solarized.accent, '#1f6feb']) {
+    expect(`${color}: ${drawn.has(color)}`).toBe(`${color}: true`)
+  }
+  for (const color of [PALETTE.paper, PALETTE.ink, solarized.pillCard]) {
+    expect(`${color}: ${drawn.has(color)}`).toBe(`${color}: false`)
+  }
+  const listed = (await runCommand($, 'theme list')).text ?? ''
+  expect(listed).toContain('- solarized-dark (in effect)')
+  expect(listed).not.toContain('- default (in effect)')
 })

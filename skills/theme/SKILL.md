@@ -10,10 +10,11 @@ The pane's look comes from one optional file: `$HOME/.claude/pulumi-plan/theme.j
 ## Schema
 
 ```json
-{ "colors": { "<palette key>": "#rrggbb" }, "font": "<CSS font-family>" }
+{ "preset": "<bundled theme>", "colors": { "<palette key>": "#rrggbb" }, "font": "<CSS font-family>" }
 ```
 
-- Both keys are optional. No file, or `{}`, is the default look.
+- Every key is optional. No file, or `{}`, is the default look.
+- `preset` picks a bundled theme: `default`, `dark`, `solarized-dark` or `high-contrast`. `colors` then overrides single keys of that theme. `/pulumi-plan theme list` lists them.
 - Overlay: each `colors` entry replaces that one key; every key left out keeps its default.
 - Colours are `#rrggbb` only: no `#rgb`, no alpha, no names, no `rgb()`.
 - `font` is a CSS `font-family` string of 1 to 200 characters. It sets the font of the chips and the banner, which the desktop app draws as images. Text elsewhere, and everything in the terminal, uses the surface's own monospace font.
@@ -60,24 +61,27 @@ The pane's look comes from one optional file: `$HOME/.claude/pulumi-plan/theme.j
 | `pillDanger` | `#eb3233` | Replace and Delete section pills; YES, APPLY TO PRODUCTION |
 | `pillPending` | `#ba4e11` | "Also applied: drift already pending" section pill |
 | `pillInfo` | `#0074f8` | Diagnostics section pill |
+| `riskLow` | `#abf6d3` | LOW RISK chip |
+| `riskMedium` | `#ffe48b` | MEDIUM RISK chip |
+| `riskHigh` | `#ad080a` | HIGH RISK chip (its text is `onAccent`) |
 
 ## Contrast
 
 Keep 4.5:1 or more for every pair below; the bold `onAccent` labels need at least 3:1, also against their hover fill (the fill moved 20% toward `ink`).
 
 - `ink`, `muted`, `faint` on `card`, `panel` and `accentPaper`
-- `ink` on `warning`, `create`, `update`, `replace`, `delete`, `drift`, `pendingDrift`, `info`, `accentSoft`
+- `ink` on `warning`, `create`, `update`, `replace`, `delete`, `drift`, `pendingDrift`, `info`, `accentSoft`, `riskLow`, `riskMedium`
 - `warnInk` on `warning` and on `card`
 - `dangerInk` on `accentPaper` and on `removedBg`
 - `removedInk` on `removedBg`, `addedInk` on `addedBg`, `logInk` on `logBg`
-- `onAccent` on `accent`, `ok`, `danger` and every `pill*` key
+- `onAccent` on `accent`, `ok`, `danger`, `riskHigh` and every `pill*` key
 - `ink` as a rim against `paper` and `card`: on a dark theme `ink` is light, so cards get a light rim
 
 ## Procedure
 
-1. Read `$HOME/.claude/pulumi-plan/theme.json` if it exists, and keep what it has unless the user asked to change it.
+1. Read `$HOME/.claude/pulumi-plan/theme.json` if it exists, and keep what it has unless the user asked to change it. When a bundled theme is close to what the user wants (dark, solarized, high contrast), set `preset` to it and add only the differences to `colors`.
 2. Work out the new values and merge them into its `colors` (and `font`).
-3. Drop every entry equal to its default in the table above (compare case-insensitively), and `font` when it is `ui-monospace, SFMono-Regular, Menlo, monospace`.
+3. Drop every entry equal to its value in the chosen `preset`, or with no preset its default in the table above (compare case-insensitively), and `font` when it is `ui-monospace, SFMono-Regular, Menlo, monospace`.
 4. Create `$HOME/.claude/pulumi-plan/` if it is missing and write the file as formatted JSON.
 5. Tell the user to run `/pulumi-plan theme` (or start a new session). It reports the file, how many colour overrides and whether a font override are in effect, and every problem; an open pane redraws at once. When they report a problem, fix the file and have them run it again.
 
@@ -126,7 +130,10 @@ Every key a coherent dark look needs; `onAccent` keeps its default white and `ok
     "pillUpdate": "#7d6008",
     "pillDanger": "#b62324",
     "pillPending": "#9a4a07",
-    "pillInfo": "#1f5fbf"
+    "pillInfo": "#1f5fbf",
+    "riskLow": "#1b4332",
+    "riskMedium": "#5a4210",
+    "riskHigh": "#b62324"
   }
 }
 ```

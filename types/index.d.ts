@@ -1,5 +1,7 @@
 export type PlanRole = 'baseline' | 'branch' | 'apply'
 
+export type PlanRisk = 'low' | 'medium' | 'high'
+
 export type PlanCategory = 'create' | 'update' | 'replace' | 'delete' | 'other'
 
 export type PlanChangeCategory = Exclude<PlanCategory, 'other'>
@@ -55,6 +57,8 @@ export type PlanGit =
 export type PlanRun = {
   role: PlanRole
   label: string
+  risk?: PlanRisk
+  riskReason?: string
   project: string
   stack: string
   previewPath: string
@@ -111,6 +115,7 @@ export type PlanJob = {
 }
 
 export type PlanTheme = {
+  preset?: string
   colors: Record<string, string>
   font?: string
 }

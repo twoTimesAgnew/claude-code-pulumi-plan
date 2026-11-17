@@ -38,6 +38,9 @@ export const DEFAULT_PALETTE = {
   pillDanger: '#eb3233',
   pillPending: '#ba4e11',
   pillInfo: '#0074f8',
+  riskLow: '#abf6d3',
+  riskMedium: '#ffe48b',
+  riskHigh: '#ad080a',
 } as const
 
 export type PaletteKey = keyof typeof DEFAULT_PALETTE
@@ -56,6 +59,141 @@ export const PILL_KEYS = [
 ] as const satisfies readonly PaletteKey[]
 
 export type PillKey = (typeof PILL_KEYS)[number]
+
+export const THEME_PRESETS = {
+  default: {},
+  dark: {
+    paper: '#0d1117',
+    card: '#161b22',
+    panel: '#1c2129',
+    ink: '#e6edf3',
+    muted: '#b1bac4',
+    faint: '#8b949e',
+    divider: '#30363d',
+    accent: '#6e40c9',
+    accentSoft: '#2d2459',
+    accentPaper: '#1b1730',
+    create: '#1b4332',
+    update: '#4b3f0b',
+    replace: '#5c1f22',
+    delete: '#45232a',
+    drift: '#30363d',
+    pendingDrift: '#5a4210',
+    info: '#173a5e',
+    warning: '#3a2f12',
+    removedBg: '#3c1618',
+    removedInk: '#ffb1ab',
+    addedBg: '#0f2d1d',
+    addedInk: '#7ee2a8',
+    danger: '#b62324',
+    dangerInk: '#ff9492',
+    ok: '#1a7f37',
+    warnInk: '#f2b45a',
+    logBg: '#010409',
+    logInk: '#e6edf3',
+    pillCard: '#1f5fbf',
+    pillNeutral: '#484f58',
+    pillCreate: '#176b2c',
+    pillUpdate: '#7d6008',
+    pillDanger: '#b62324',
+    pillPending: '#9a4a07',
+    pillInfo: '#1f5fbf',
+    riskLow: '#1b4332',
+    riskMedium: '#5a4210',
+    riskHigh: '#b62324',
+  },
+  'solarized-dark': {
+    paper: '#002b36',
+    card: '#073642',
+    panel: '#0a3f4c',
+    ink: '#fdf6e3',
+    muted: '#b8c4c4',
+    faint: '#9fb0b0',
+    divider: '#586e75',
+    accent: '#5459b0',
+    accentSoft: '#2e3a6b',
+    accentPaper: '#0b3340',
+    onAccent: '#fdf6e3',
+    create: '#1f4a2a',
+    update: '#4d4000',
+    replace: '#5c1f1e',
+    delete: '#4a2326',
+    drift: '#134552',
+    pendingDrift: '#5a3d00',
+    info: '#0f4a6e',
+    warning: '#3d3500',
+    removedBg: '#3b1a1a',
+    removedInk: '#ffb3ae',
+    addedBg: '#123d26',
+    addedInk: '#a8e6a1',
+    danger: '#c02a27',
+    dangerInk: '#ff9b97',
+    ok: '#4f6b00',
+    okInk: '#a8e6a1',
+    warnInk: '#e8a54b',
+    logBg: '#001e26',
+    logInk: '#eee8d5',
+    pillCard: '#1f6fa8',
+    pillNeutral: '#4a5f66',
+    pillCreate: '#4f6b00',
+    pillUpdate: '#7a6500',
+    pillDanger: '#c02a27',
+    pillPending: '#a63d10',
+    pillInfo: '#1f6fa8',
+    riskLow: '#1f4a2a',
+    riskMedium: '#5a3d00',
+    riskHigh: '#c02a27',
+  },
+  'high-contrast': {
+    paper: '#ffffff',
+    card: '#ffffff',
+    panel: '#f2f2f2',
+    ink: '#000000',
+    muted: '#1a1a1a',
+    faint: '#333333',
+    divider: '#000000',
+    accent: '#0000c8',
+    accentSoft: '#d6d6ff',
+    accentPaper: '#f0f0ff',
+    create: '#b8f5c8',
+    update: '#fff27a',
+    replace: '#ffc2c2',
+    delete: '#ffd6d6',
+    drift: '#e0e0e0',
+    pendingDrift: '#ffd966',
+    info: '#cce0ff',
+    warning: '#fff0b3',
+    removedBg: '#ffe5e5',
+    removedInk: '#7a0000',
+    addedBg: '#e5ffef',
+    addedInk: '#00451f',
+    danger: '#b00000',
+    dangerInk: '#8b0000',
+    ok: '#006b2e',
+    okInk: '#00451f',
+    warnInk: '#7a3300',
+    logBg: '#000000',
+    logInk: '#ffffff',
+    pillCard: '#003f8a',
+    pillNeutral: '#404040',
+    pillCreate: '#005c2e',
+    pillUpdate: '#5c5000',
+    pillDanger: '#b00000',
+    pillPending: '#7a3300',
+    pillInfo: '#0047b3',
+    riskLow: '#b8f5c8',
+    riskMedium: '#ffd966',
+    riskHigh: '#8b0000',
+  },
+} as const satisfies Record<string, Partial<Palette>>
+
+export type PresetName = keyof typeof THEME_PRESETS
+
+export const PRESET_NAMES = Object.keys(THEME_PRESETS) as PresetName[]
+
+export function isPresetName(name: unknown): name is PresetName {
+  return typeof name === 'string' && Object.hasOwn(THEME_PRESETS, name)
+}
 
 export function pillHoverFill(fill: string, ink: string = DEFAULT_PALETTE.ink): string {
   const channel = (hex: string, at: number) => parseInt(hex.slice(at, at + 2), 16)
@@ -112,8 +250,11 @@ export function parseTheme(text: string): ParsedTheme {
     return { theme: { colors: {} }, problems: [`the file must hold a JSON object, not ${shown(root)}`] }
   }
   const problems = Object.keys(root)
-    .filter(key => key !== 'colors' && key !== 'font')
-    .map(key => `${shown(key)} is not read: only "colors" and "font" are`)
+    .filter(key => key !== 'preset' && key !== 'colors' && key !== 'font')
+    .map(key => `${shown(key)} is not read: only "preset", "colors" and "font" are`)
+  if (root.preset !== undefined && !isPresetName(root.preset)) {
+    problems.push(`"preset" is ${shown(root.preset)}, not one of ${PRESET_NAMES.map(name => `"${name}"`).join(', ')}`)
+  }
   const colors: Record<string, string> = {}
   const given = root.colors === undefined ? {} : root.colors
   if (!isRecord(given)) {
@@ -135,11 +276,18 @@ export function parseTheme(text: string): ParsedTheme {
     problems.push(`"font" is ${shown(root.font)}, not a CSS font-family string of 1 to ${THEME_FONT_LIMIT} characters`)
   }
 
-  return { theme: isFont(root.font) ? { colors, font: root.font } : { colors }, problems }
+  return {
+    theme: {
+      ...(isPresetName(root.preset) && root.preset !== 'default' ? { preset: root.preset } : {}),
+      colors,
+      ...(isFont(root.font) ? { font: root.font } : {}),
+    },
+    problems,
+  }
 }
 
 export function resolveTheme(theme: PlanTheme): Theme {
-  const palette: Palette = { ...DEFAULT_PALETTE }
+  const palette: Palette = { ...DEFAULT_PALETTE, ...(isPresetName(theme.preset) ? THEME_PRESETS[theme.preset] : {}) }
   for (const [key, value] of Object.entries(theme.colors)) {
     if (isPaletteKey(key) && THEME_HEX.test(value)) {
       palette[key] = value
@@ -156,15 +304,23 @@ export function describeTheme(load: ThemeLoad): string {
   if (!load.isFound) {
     return `No theme file at ${load.path}: the Pulumi plan pane uses its default look.`
   }
-  const { colors, font } = load.theme
+  const { preset, colors, font } = load.theme
   const lines = [
-    `Theme file ${load.path}: ${plural(Object.keys(colors).length, 'colour override')} and ${font === undefined ? 'no font override' : `the font ${JSON.stringify(font)}`} in effect.`,
+    `Theme file ${load.path}: ${preset === undefined ? '' : `the "${preset}" theme with `}${plural(Object.keys(colors).length, 'colour override')} and ${font === undefined ? 'no font override' : `the font ${JSON.stringify(font)}`} in effect.`,
   ]
   if (load.problems.length > 0) {
     lines.push(`${plural(load.problems.length, 'problem')}, each ignored (what it names keeps its default):`, ...load.problems.map(p => `- ${p}`))
   }
 
   return lines.join('\n')
+}
+
+export function describePresets(current: string | undefined): string {
+  return [
+    'Bundled themes (set "preset" in the theme file, then /pulumi-plan theme):',
+    ...PRESET_NAMES.map(name => `- ${name}${(current ?? 'default') === name ? ' (in effect)' : ''}`),
+    'Entries in "colors" still override single keys of the chosen theme.',
+  ].join('\n')
 }
 
 export const LABEL_WIDTH = 13

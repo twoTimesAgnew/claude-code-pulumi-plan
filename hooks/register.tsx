@@ -9,6 +9,7 @@ import type {
   PlanGitParent,
   PlanJob,
   PlanProp,
+  PlanRisk,
   PlanRole,
   PlanRun,
   PlanSince,
@@ -58,7 +59,7 @@ import {
   upsertRun,
 } from './plan'
 import type { Card, Entry, Preview } from './plan'
-import { bannerSvg, chipSvg, describeTheme, metaLabel, parseTheme, pillHoverFill, plural, resolveTheme } from './style'
+import { bannerSvg, chipSvg, describePresets, describeTheme, metaLabel, parseTheme, pillHoverFill, plural, resolveTheme } from './style'
 import type { PaletteKey, PillKey, ThemeLoad } from './style'
 
 const PANE = 'pulumi-plan'
@@ -99,6 +100,14 @@ const CATEGORY_FILLS: Record<PlanChangeCategory, PaletteKey> = {
   delete: 'delete',
 }
 
+const RISKS: Record<PlanRisk, { chip: string; fill: PaletteKey; ink: PaletteKey; meaning: string }> = {
+  low: { chip: 'low risk', fill: 'riskLow', ink: 'ink', meaning: 'no customer impact' },
+  medium: { chip: 'medium risk', fill: 'riskMedium', ink: 'ink', meaning: 'possible customer impact' },
+  high: { chip: 'high risk', fill: 'riskHigh', ink: 'onAccent', meaning: 'definite customer impact' },
+}
+
+const RISK_REASON_LIMIT = 300
+
 const DESCRIPTION = [
   'Shows what a `pulumi preview` would change in the Pulumi plan pane, separating the change a branch makes from drift already in the stack.',
   'Call it once per preview output, right after that preview finishes, for baseline runs (from the base branch, e.g. origin/main) and branch runs alike.',
@@ -106,6 +115,7 @@ const DESCRIPTION = [
   'The preview must be run with `--json` and its stdout redirected to a file, e.g. `pulumi preview --stack <s> --json --non-interactive > /abs/path/preview.json`; pass that file as `previewJson`.',
   'A branch run is compared with the baseline run of the same project/stack; register the baseline too or drift cannot be separated.',
   'Role `apply` registers a preview run from a clean checkout at origin/main (after the change merged) of what an apply would do now; pass `projectDir` (the folder holding Pulumi.yaml where the preview ran) and `targets` when the preview used `--target`. Its card offers the user an Approve button for `mcp__pulumi-plan__apply`; when a paired pre-merge baseline separates the change from pending drift, it offers two: Approve all (drift included) and Approve change only (only the merge\'s own steps, via `--target`).',
+  'Pass `risk` for every preview: `low` when the change has no customer impact, `medium` when customers could be affected (a restart that should be rolling, a DNS or certificate change that should be seamless), `high` when customers will be affected (downtime, a replaced database, a deleted ingress). Give the reason in `riskReason`. A card without a risk shows RISK NOT SET.',
   'For an apply after a merge, register two previews of the same stack, each from its own clean scratch worktree: `baseline` from the commit before the merge (`<merge>^1`) and `apply` from origin/main, in either order; the apply card then separates what the merge changes from drift that the apply also runs.',
 ].join(' ')
 
@@ -129,6 +139,16 @@ const INPUT_SCHEMA = {
     label: {
       type: 'string',
       description: 'Short name of the change set (ticket id or branch name). Required when role is `branch`.',
+    },
+    risk: {
+      type: 'string',
+      enum: ['low', 'medium', 'high'],
+      description:
+        'Customer impact of this preview: `low` none, `medium` possible, `high` definite. Shown as a chip on the card.',
+    },
+    riskReason: {
+      type: 'string',
+      description: `One sentence on why this risk level: which customers or services are affected and how. Up to ${RISK_REASON_LIMIT} characters.`,
     },
     stack: {
       type: 'string',
@@ -180,6 +200,8 @@ type Dollar = EngineInterface
 type RunArgs = {
   role: PlanRole
   label: string
+  risk?: PlanRisk
+  riskReason?: string
   project: string
   stack: string
   previewPath: string
@@ -420,6 +442,8 @@ async function buildRun($: Dollar, preview: Preview, args: RunArgs): Promise<Pla
   const run: PlanRun = {
     role: args.role,
     label: args.label,
+    ...(args.risk === undefined ? {} : { risk: args.risk }),
+    ...(args.riskReason ? { riskReason: args.riskReason } : {}),
     project: args.project,
     stack: args.stack,
     previewPath: args.previewPath,
@@ -471,6 +495,9 @@ function answer(run: PlanRun, baseline: PlanRun | undefined, apply: PlanRun | un
     `Registered ${run.project}/${run.stack} as ${run.role}${run.label ? ` "${run.label}"` : ''}.`,
     `git: ${git.text}${git.dirty ? ` · ${git.dirty}` : ''}`,
     `steps: ${countsLine(run)}`,
+    run.risk
+      ? `risk: ${run.risk} (${RISKS[run.risk].meaning})${run.riskReason ? ` · ${run.riskReason}` : ''}`
+      : 'risk: not set; register again with risk (low, medium or high) so the card shows it.',
   ]
   if (run.role === 'branch') {
     if (baseline) {
@@ -930,8 +957,8 @@ export const register: Register = on => {
     })
     await $.command.register({
       name: 'pulumi-plan',
-      description: 'Open the Pulumi plan pane; `/pulumi-plan clear` empties it, `/pulumi-plan theme` reloads its theme file',
-      argumentHint: '[clear|theme]',
+      description: 'Open the Pulumi plan pane; `/pulumi-plan clear` empties it, `/pulumi-plan theme` reloads its theme file, `/pulumi-plan theme list` lists the bundled themes',
+      argumentHint: '[clear|theme|theme list]',
     })
     try {
       const load = await refreshTheme($)
@@ -971,6 +998,11 @@ export const register: Register = on => {
             : 'Pulumi plan pane cleared.',
       }
     }
+    if (args === 'theme list') {
+      const load = await refreshTheme($)
+
+      return { text: describePresets(load.theme.preset) }
+    }
     if (args === 'theme') {
       const load = await refreshTheme($)
       if ((await $.ui.panes()).some(pane => pane.id === PANE)) {
@@ -990,6 +1022,8 @@ export const register: Register = on => {
     const worktree = text(input.worktree)
     const role = text(input.role)
     const label = text(input.label)
+    const risk = text(input.risk)
+    const riskReason = cleanText(text(input.riskReason)).replace(/\s+/g, ' ').trim()
     const givenStack = text(input.stack)
     const givenProject = text(input.project)
     const projectDir = text(input.projectDir)
@@ -1002,6 +1036,12 @@ export const register: Register = on => {
     }
     if (role === 'branch' && label === '') {
       return { deny: `${TOOL}: label is required for a branch run.` }
+    }
+    if (risk !== '' && !Object.hasOwn(RISKS, risk)) {
+      return { deny: `${TOOL}: risk must be "low", "medium" or "high".` }
+    }
+    if (riskReason.length > RISK_REASON_LIMIT) {
+      return { deny: `${TOOL}: riskReason must be at most ${RISK_REASON_LIMIT} characters.` }
     }
     if (role === 'apply') {
       if (!isAbsolute(projectDir) || hasControl(projectDir)) {
@@ -1052,6 +1092,8 @@ export const register: Register = on => {
     const run = await buildRun($, preview, {
       role,
       label,
+      ...(risk === '' ? {} : { risk: risk as PlanRisk }),
+      riskReason,
       project,
       stack,
       previewPath,
@@ -1609,6 +1651,9 @@ export const register: Register = on => {
         : card.isApply
           ? chip('apply', P.accent, P.onAccent)
           : chip(run.label, P.accentSoft)
+      const riskChip = run.risk
+        ? chip(RISKS[run.risk].chip, P[RISKS[run.risk].fill], P[RISKS[run.risk].ink])
+        : chip('risk not set', P.warning, P.warnInk)
       const counts = [
         comparison.change.create.length > 0 && chip(`+${comparison.change.create.length} create`, P.create),
         comparison.change.update.length > 0 && chip(`~${comparison.change.update.length} update`, P.update),
@@ -1624,7 +1669,7 @@ export const register: Register = on => {
         </Button>,
         id,
       )
-      const chips = chipRow([labelChip, ...counts])
+      const chips = chipRow([labelChip, riskChip, ...counts])
       if (!open) {
         return cardFrame(header, chips)
       }
@@ -1721,6 +1766,7 @@ export const register: Register = on => {
           {chips}
           <Box flexDirection="column">
             {metaRow('target', value(`${run.project} / ${run.stack}`))}
+            {run.riskReason && metaRow('risk', value(run.riskReason))}
             {metaRow('git', gitValue(run))}
             {isPending && card.baseline && metaRow('since', drawSince(run, card.baseline))}
             {card.baseline && metaRow('base git', gitValue(card.baseline))}

@@ -9,6 +9,7 @@ Not affiliated with Pulumi or Anthropic.
 ## What it does
 
 - A pane ("Pulumi plan") with one card per project/stack, fed by `pulumi preview --json` output files that Claude registers.
+- A risk label on every card: LOW RISK (no customer impact), MEDIUM RISK (possible customer impact) or HIGH RISK (definite customer impact), with Claude's one-line reason. Claude passes it when it registers the preview; a card registered without one shows RISK NOT SET.
 - Change vs drift: a `branch` preview is compared with a `baseline` preview of the same project/stack. Steps only the branch run has are the change; steps both have are drift already in the stack.
 - Apply cards: a preview registered with role `apply` gets an Approve button. `pulumi up` runs only through the mod's `apply` tool, and only after that press.
 - Two approval scopes when the apply card is paired with a pre-merge baseline: "Approve all" (every step, drift included) and "Approve change only" (only the merge's own steps, run with `--target`; the drift stays pending). The scope comes from which button was pressed; the tool takes no scope argument.
@@ -40,14 +41,22 @@ Registered runs live in session state and do not survive a session restart; regi
 
 | Name | Arguments / behavior |
 | --- | --- |
-| `mcp__pulumi-plan__show` | `previewJson`: absolute path of a file holding one preview's `--json` stdout. `worktree`: absolute path of the git checkout the preview ran from. `role`: `baseline` \| `branch` \| `apply`. Optional `label` (required for `branch`). `stack` and `project`: only used when the preview has no steps to derive them from. `projectDir`: role `apply`, required, the directory holding `Pulumi.yaml`. `targets`: role `apply`, the exact `--target` URNs the preview used. Git info (HEAD, branch, merge parents, dirty file count) is read from `worktree` at call time, so register before removing a scratch worktree. |
+| `mcp__pulumi-plan__show` | `previewJson`: absolute path of a file holding one preview's `--json` stdout. `worktree`: absolute path of the git checkout the preview ran from. `role`: `baseline` \| `branch` \| `apply`. Optional `label` (required for `branch`). `risk`: `low` \| `medium` \| `high`, the preview's customer impact (none, possible, definite), with a one-sentence `riskReason` (up to 300 characters). `stack` and `project`: only used when the preview has no steps to derive them from. `projectDir`: role `apply`, required, the directory holding `Pulumi.yaml`. `targets`: role `apply`, the exact `--target` URNs the preview used. Git info (HEAD, branch, merge parents, dirty file count) is read from `worktree` at call time, so register before removing a scratch worktree. |
 | `mcp__pulumi-plan__apply` | `project`, `stack`. Works only after the Approve press. |
 | `mcp__pulumi-plan__apply_status` | `project`, `stack`. Reports running/finished, exit code and log tail; waits up to about 9 minutes for a running job. |
-| `/pulumi-plan` | Opens the pane. `/pulumi-plan clear` empties it. `/pulumi-plan theme` rereads the theme file and lists any problems in it. |
+| `/pulumi-plan` | Opens the pane. `/pulumi-plan clear` empties it. `/pulumi-plan theme` rereads the theme file and lists any problems in it. `/pulumi-plan theme list` lists the bundled themes and marks the one in effect. |
 
 ## Look and feel
 
-The pane's colours and chip font come from an optional `~/.claude/pulumi-plan/theme.json`. Each `colors` entry overrides one palette key (`#rrggbb` only); every key left out keeps its default. `font` is a CSS font-family for the chips and banner the desktop app draws as images.
+The pane's colours and chip font come from an optional `~/.claude/pulumi-plan/theme.json`.
+
+Four themes are bundled: `default`, `dark`, `solarized-dark` and `high-contrast` (light, black on white). Pick one with `preset`, then run `/pulumi-plan theme`:
+
+```json
+{ "preset": "dark" }
+```
+
+`colors` entries still apply on top of the preset, one key at a time. Each `colors` entry overrides one palette key (`#rrggbb` only); every key left out keeps its default. `font` is a CSS font-family for the chips and banner the desktop app draws as images.
 
 ```json
 {
